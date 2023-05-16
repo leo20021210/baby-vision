@@ -85,7 +85,7 @@ def main():
     args = parser.parse_args()
 
     print(args)
-    wandb.init(project="baby-vision-hyperparameter", name = "epoch_" + str(args.checkpoint_epoch) + ", strength_" + str(args.prior_strength) + ", iamgenet", entity="peiqiliu", config=args)
+    wandb.init(project="baby-vision-hyperparameter", name = "epoch_" + str(args.checkpoint_epoch) + ", strength_" + str(args.prior_strength), entity="peiqiliu", config=args)
     wandb.config = args
 
     if args.gpu is not None:
@@ -106,6 +106,10 @@ def main():
         # Simply call main_worker function
         main_worker(args.gpu, ngpus_per_node, args)
 
+def reset_weights(model):
+    for module in model.modules():
+        if hasattr(module, "reset_parameters"):
+            module.reset_parameters()
 
 def main_worker(gpu, ngpus_per_node, args):
     args.gpu = gpu
@@ -119,7 +123,7 @@ def main_worker(gpu, ngpus_per_node, args):
     if args.model == 'convnext_large':
         model = models.convnext_large()
     else:
-        model = models.__dict__[args.model](pretrained=True)
+        model = models.__dict__[args.model](pretrained=False)
     if args.model.startswith('res'):
         model.fc = torch.nn.Linear(in_features=2048, out_features=args.n_out, bias=True)
     elif not args.model.startswith('convnext'):
@@ -147,10 +151,10 @@ def main_worker(gpu, ngpus_per_node, args):
         assert args.checkpoint_epoch != 0
         args.resume = os.path.join(args.resume, "epoch_" + str(args.checkpoint_epoch) + ".tar")
         if os.path.isfile(args.resume):
-            print(args.resume)
+            print('load from ' + args.resume)
             checkpoint = torch.load(args.resume)
             model.load_state_dict(checkpoint['model_state_dict'])
-            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            #optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
 
@@ -235,16 +239,25 @@ def main_worker(gpu, ngpus_per_node, args):
             torch.save(labels, os.path.join(args.exp_path, f'cluster_{epoch}.tar'))
             
             if args.model.startswith('convnext'):
-                model.module.classifier[-1] = torch.nn.Linear(in_features=1000, out_features=args.n_out, bias=True).cuda()
-                #model.module.classifier[-1] = last_layer
+                #model.module.classifier[-1] = torch.nn.Linear(in_features=1000, out_features=args.n_out, bias=True).cuda()
+                model.module.classifier[-1] = last_layer
                 rename_optimizer = torch.optim.Adam([model.module.classifier[-1].weight], args.lp_lr, weight_decay=args.weight_decay)
             elif args.model.startswith('res'):
-                model.module.fc = torch.nn.Linear(in_features=2048, out_features=args.n_out, bias=True).cuda()
-                #model.module.fc = last_layer
+                #model = models.__dict__[args.model](pretrained=False)
+                #model = torch.nn.DataParallel(model).cuda()
+                #model.module.fc = torch.nn.Linear(in_features=2048, out_features=args.n_out, bias=True).cuda()
+                #if args.optim == 'adam':
+                #    optimizer = torch.optim.Adam(model.parameters(), args.lr, weight_decay=args.weight_decay)
+                #    scheduler = StepLR(optimizer, step_size=10, gamma=1)
+                #elif args.optim == 'sgd':
+                #    optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=0.9)
+                #    scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
+                model.module.fc = last_layer
+                reset_weights(model)
                 rename_optimizer = torch.optim.Adam([model.module.fc.weight], args.lp_lr, weight_decay=args.weight_decay)
             else:
-                model.module.classifier = torch.nn.Linear(in_features=1280, out_features=args.n_out, bias=True).cuda()
-                #model.module.classifier = last_layer
+                #model.module.classifier = torch.nn.Linear(in_features=1280, out_features=args.n_out, bias=True).cuda()
+                model.module.classifier = last_layer
                 rename_optimizer = torch.optim.Adam([model.module.classifier.weight], args.lp_lr, weight_decay=args.weight_decay)
             #set_parameter_requires_grad(model, True)
     
@@ -344,8 +357,8 @@ class ModifiedSubset(Dataset):
         self.new_labels = new_labels
         
     def __getitem__(self, index):
-        image, _ = self.subset[index]
-        new_label = self.new_labels[index]
+        image, label = self.subset[index]
+        new_label = self.new_labels[index].item()
         return image, new_label
     
     def __len__(self):

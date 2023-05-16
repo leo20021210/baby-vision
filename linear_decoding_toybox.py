@@ -162,11 +162,12 @@ def main_worker(gpu, ngpus_per_node, args):
         model = model.cuda()
     else:
         #model = models.resnext50_32x4d(pretrained=False)
-        model = models.resnet50(pretrained=False)
+        model = models.resnet50(pretrained=True)
         model.fc = torch.nn.Linear(in_features=2048, out_features=args.num_outs, bias=True)
         model = torch.nn.DataParallel(model).cuda()
-        checkpoint = torch.load(args.checkpoint_path)
-        model.load_state_dict(checkpoint['model_state_dict'])
+        if args.checkpoint_path:
+            checkpoint = torch.load(args.checkpoint_path)
+            model.load_state_dict(checkpoint['model_state_dict'])
         set_parameter_requires_grad(model)  # freeze the trunk
         model.module.fc = torch.nn.Linear(in_features=2048, out_features=num_classes, bias=True).cuda()
 

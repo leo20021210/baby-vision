@@ -67,11 +67,15 @@ parser.add_argument('--lp_lr', '--lp_learning-rate', default=0.0006, type=float,
 SEG_LEN = 288
 FPS = 5
 
+def set_parameter_requires_grad(model, train=True):
+    for param in model.parameters():
+        param.requires_grad = train
+
 def main():
     args = parser.parse_args()
 
     print(args)
-    wandb.init(project="baby-vision-hyperparameter", entity="peiqiliu", name = "iamgenet-TC")
+    wandb.init(project="baby-vision-hyperparameter", entity="peiqiliu", name = "imagenet-TC")
     wandb.config = args
 
     if args.gpu is not None:
@@ -208,7 +212,9 @@ def main_worker(gpu, ngpus_per_node, args):
         
         #val(val_loader, model, criterion, step, args)
         if epoch % 2 == 0:
+            set_parameter_requires_grad(model, False)
             val(args.val_data, model, criterion, step, args)
+            set_parameter_requires_grad(model, True)
         # train for one epoch
         step = train(train_loader, model, criterion, optimizer, epoch, args)
         scheduler.step()
